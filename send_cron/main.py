@@ -1,5 +1,6 @@
 import contextlib
 import datetime
+import random
 
 from typing import Optional, List
 
@@ -78,16 +79,31 @@ class SendTask:
     def parse_task(self, text: str):
         self.msg = "|".join(text.split("|")[1:]).strip()
         if not self.msg:
-            raise ValueError("No message provided")
+            raise ValueError("无提工消息")
         text = text.split("|")[0].strip()
         data = text.split(" ")
         if len(data) != 6:
-            raise ValueError("Invalid crontab format")
+            raise ValueError("键入消息条件错误")
         try:
             scheduler._create_trigger("cron", self.parse_cron_kwargs(text))
         except Exception as e:
-            raise ValueError(f"Invalid crontab format: {e}") from e
+            raise ValueError(f"不知道的键入消息条件错误: {e}") from e
         self.cron = text
+    def default_task(self):
+        hour = random.randint(0, 11)  # 0 到 11 点
+        minute = random.randint(0, 59)  # 0 到 59 分钟
+
+        # 格式化小时和分钟，确保补零
+        text = f"00 {minute:02} {hour:02} * * *"
+        data = text.split(" ")
+        if len(data) != 6:
+            raise ValueError("键入消息条件错误")
+        try:
+            scheduler._create_trigger("cron", self.parse_cron_kwargs(text))
+        except Exception as e:
+            raise ValueError(f"不知道的键入消息条件错误: {e}") from e
+        self.cron = text
+
 
 
 class SendTasks:
@@ -185,16 +201,16 @@ send_cron_tasks.register_all_tasks()
 
 send_help_msg = f"""
 定时发送消息。
-,{alias_command("send_cron")} crontab 表达式 | 消息内容
+,{alias_command("auto_key")} crontab 表达式 | 消息内容
 i.e.
-,{alias_command("send_cron")} 59 59 23 * * * | 又是无所事事的一天呢。
-,{alias_command("send_cron")} 0 * * * * * | 又过去了一分钟。
+,{alias_command("auto_key")} 59 59 23 * * * | 又是无所事事的一天呢。
+,{alias_command("auto_key")} 0 * * * * * | 又过去了一分钟。
 
 
-,{alias_command("send_cron")} rm 2 - 删除某个任务
-,{alias_command("send_cron")} pause 1 - 暂停某个任务
-,{alias_command("send_cron")} resume 1 - 恢复某个任务
-,{alias_command("send_cron")} list <all> - 获取任务列表
+,{alias_command("auto_key")} rm 2 - 删除某个任务
+,{alias_command("auto_key")} pause 1 - 暂停某个任务
+,{alias_command("auto_key")} resume 1 - 恢复某个任务
+,{alias_command("auto_key")} list <all> - 获取任务列表
 """
 
 
@@ -213,10 +229,10 @@ async def from_msg_get_task_id(message: Message):
 
 
 @listener(
-    command="send_cron",
+    command="auto_key",
     parameters="crontab 表达式 | 消息内容",
     need_admin=True,
-    description=f"定时发送消息\n请使用 ,{alias_command('send_cron')} h 查看可用命令",
+    description=f"定时发送消息\n请使用 ,{alias_command('auto_key')} h 查看可用命令",
 )
 async def send_cron(message: Message):
     if message.arguments == "h" or len(message.parameter) == 0:
@@ -252,6 +268,21 @@ async def send_cron(message: Message):
                 )
             else:
                 return await message.edit("没有已注册的任务。")
+        else:
+            # add task
+            task = SendTask(send_cron_tasks.get_next_task_id())
+            task.cid = message.parameter[0]
+            task.msg = message.parameter[1]
+            try:
+                task.default_task()
+            except Exception as e:
+                return await message.edit(f"参数错误：{e}")
+            send_cron_tasks.add(task)
+            send_cron_tasks.register_single_task(task)
+            send_cron_tasks.save_to_file()
+            send_cron_tasks.load_from_file()
+            return await message.edit(f"ok啦 {task.task_id}")
+
     # add task
     task = SendTask(send_cron_tasks.get_next_task_id())
     task.cid = message.chat.id
@@ -263,4 +294,4 @@ async def send_cron(message: Message):
     send_cron_tasks.register_single_task(task)
     send_cron_tasks.save_to_file()
     send_cron_tasks.load_from_file()
-    await message.edit(f"已添加任务 {task.task_id}")
+    await message.edit(f"ok啦 {task.task_id}")
